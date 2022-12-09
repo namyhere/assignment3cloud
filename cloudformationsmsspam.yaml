@@ -1,0 +1,91 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: AWS Email Spam Detection CTSN
+Parameters:
+  EndPointName:
+    Type: String
+Resources:
+ S3BucketStoringEmailCloudFormation:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: emailcloudformation-s3bucket
+    DeletionPolicy: Retain
+ BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref S3BucketStoringEmailCloudFormation
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: AllowSESPuts
+            Effect: Allow
+            Principal:
+              Service:
+                - ses.amazonaws.com
+            Action:
+              - 's3:PutObject'
+            Resource:
+              - !Sub arn:aws:s3:::${S3BucketStoringEmailCloudFormation}/*
+            Condition:
+              StringEquals:
+                aws:Referer: '164394037047'
+ EmailLambdaCLoudFormation:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName:
+        Fn::Sub: emaillambdacloudformation-role
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+            - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+        Version: 2012-10-17
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSLambdaExecute
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+        - arn:aws:iam::aws:policy/AmazonSESFullAccess
+        - arn:aws:iam::aws:policy/AmazonSageMakerFullAccess
+        - arn:aws:iam::aws:policy/CloudWatchEventsFullAccess
+      Path: /
+ LambdaFunctionEmail:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Code:
+        S3Bucket: spam-filter-s3bucket
+        S3Key: ses-lambda-f132b747-dbd4-4862-a4bf-035be4f752f4.zip
+      Description: lambda function for email
+      Environment:
+        Variables:
+          ENDPOINT_NAME: !Ref EndPointName
+      FunctionName: email_lambda_cloudformation
+      Handler: lambda_function.lambda_handler
+      MemorySize: 512
+      Layers:
+        - arn:aws:lambda:us-east-1:668099181075:layer:AWSLambda-Python37-SciPy1x:115
+      Role: 
+       Fn::GetAtt:
+          - EmailLambdaCLoudFormation
+          - Arn
+      Runtime: python3.7
+      Timeout: 60
+ S3RuleSet:
+    Type: 'AWS::SES::ReceiptRuleSet'
+    Properties:
+      RuleSetName: 'email-to-s3'
+ S3Rule:
+    Type: 'AWS::SES::ReceiptRule'
+    DependsOn:
+      - S3RuleSet
+    Properties:
+      Rule:
+        Name: 's3-rule-applied'
+        Recipients : 
+          - 'mail@assignment3cloud.biz'
+          - 'support@sendmailscc.com'
+        Actions:
+          - S3Action:
+              BucketName: !Ref S3BucketStoringEmailCloudFormation
+        Enabled: true
+      RuleSetName: !Ref S3RuleSet
